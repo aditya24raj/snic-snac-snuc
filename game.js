@@ -129,7 +129,7 @@
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.imageSmoothingEnabled = false;
     layout(!S || !S.trail.red.concat(S.trail.blue).some(Boolean));
-    makeStars();
+    makeStars(); makeNebula();
   }
   function layout(fresh) {
     iconU = Math.max(2, Math.round(Math.min(W, H) / 160));
@@ -197,6 +197,49 @@
       stars.push({ x: Math.random() * W, y: Math.random() * H, z: d, s: Math.round(d * 1.7 + .3), v: d * 6 + 1, tw: Math.random() * 6.28 });
     }
   }
+  // a few small blocky clouds: 4-6 faint squares on a tiny lattice with gaps between them, one or two in bright white,
+  // some of them rounded (a slightly bigger square with its corner pixels knocked off)
+  let nebula = [];
+  // now and then a cluster glints and throws off a little pixel shooting star
+  let meteors = [], meteorT = 4000;
+  const nebOffset = n => [Math.round(Math.sin(clock / 45000 + n.ph) * n.q * 1.5), Math.round(Math.cos(clock / 60000 + n.ph) * n.q)];
+  function launchMeteor() {
+    const n = nebula[Math.floor(Math.random() * nebula.length)];
+    if (!n) return;
+    const [dx, dy] = nebOffset(n);
+    const a = Math.random() * 6.28, v = .07 + Math.random() * .04;   // px per ms, an unhurried drift
+    meteors.push({ x: n.cx + dx, y: n.cy + dy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: 1800 + Math.random() * 900 });
+    n.glint = 1;
+  }
+  function makeNebula() {
+    nebula = [];
+    const u = Math.max(1, Math.round(Math.min(W, H) / 300) - 1);   // corner cut
+    const q = 3 * u, qr = 4 * u, step = q;                  // neighbours touch or overlap, no gaps
+    const spots = [[.22, .2], [.78, .55], [.35, .85]];
+    for (const [fx, fy] of spots) {
+      const cx = Math.round((fx + (Math.random() - .5) * .15) * W), cy = Math.round((fy + (Math.random() - .5) * .1) * H);
+      // grown outward from one point: each new dot sticks to a random earlier one, leaning one way,
+      // with a pixel of jitter, so no two clusters come out symmetrical
+      const lean = Math.random() * 6.28, n = 4 + Math.floor(Math.random() * 3), bright = 1 + Math.floor(Math.random() * 2);
+      const pts = [[0, 0]];
+      while (pts.length < n) {
+        const [bx0, by0] = pts[Math.floor(Math.random() * pts.length)];
+        const a = lean + (Math.random() - .5) * 2.6;
+        const d = step * (.8 + Math.random() * .4);
+        pts.push([Math.round(bx0 + Math.cos(a) * d + (Math.random() - .5) * 2 * u), Math.round(by0 + Math.sin(a) * d + (Math.random() - .5) * 2 * u)]);
+      }
+      const sq = pts.map(([ox, oy], i) => {
+        const round = Math.random() < .4, sz = round ? qr : q;
+        return {
+          x: Math.round(cx + ox - sz / 2), y: Math.round(cy + oy - sz / 2), s: sz, cut: round ? u : 0,
+          a: i < bright ? .35 + Math.random() * .25 : .08 + Math.random() * .08
+        };
+      });
+      sq.reverse();                                          // centre drawn last, on top
+      nebula.push({ sq, ph: Math.random() * 6.28, q, cx, cy, glint: 0 });
+    }
+  }
+
   addEventListener('resize', resize);
 
   const laneX = l => Math.round(bx + LANE_C[l] * cell);
@@ -366,6 +409,12 @@
       for (let i = 0; i < 10; i++) sparks.push({ x: b.x + b.w / 2, y: b.y + b.h / 2, vx: (Math.random() - .5) * 6, vy: (Math.random() - .5) * 6, l: 1, c: ACC[S.winner] });
     }
     for (const s of stars) { s.y += s.v * dt / 1000; if (s.y > H) { s.y = -2; s.x = Math.random() * W; } }
+    if ((meteorT -= dt) <= 0) { launchMeteor(); meteorT = 6000 + Math.random() * 9000; }
+    for (let i = meteors.length - 1; i >= 0; i--) {
+      const m = meteors[i]; m.t += dt; m.x += m.vx * dt; m.y += m.vy * dt;
+      if (m.t >= m.life) meteors.splice(i, 1);
+    }
+    for (const n of nebula) n.glint *= Math.pow(.93, f);
     shake *= Math.pow(.86, f); flash *= Math.pow(.85, f);
   }
 
@@ -454,6 +503,31 @@
 
   function draw() {
     ctx.fillStyle = '#04030a'; ctx.fillRect(0, 0, W, H);
+    for (const n of nebula) {
+      // slow drift, a pixel at a time
+      const [dx, dy] = nebOffset(n);
+      for (const b of n.sq) {
+        ctx.fillStyle = `rgba(255,255,255,${Math.min(1, b.a + n.glint * .5)})`;
+        const x = b.x + dx, y = b.y + dy, k = b.cut;
+        if (k) { px(x + k, y, b.s - 2 * k, b.s); px(x, y + k, k, b.s - 2 * k); px(x + b.s - k, y + k, k, b.s - 2 * k); }
+        else px(x, y, b.s, b.s);
+      }
+    }
+    // shooting stars: tiny same-size pixels snapped to a pixel grid, so the trail steps like a pixel line,
+    // dimming in a few hard steps instead of tapering
+    const MP = 2, STEPS = [.95, .6, .6, .35, .35, .35, .15, .15];
+    for (const m of meteors) {
+      const fade = Math.min(1, m.t / 120) * Math.min(1, (m.life - m.t) / 300), sp = Math.hypot(m.vx, m.vy);
+      const seen = new Set();
+      for (let k = 0; k < STEPS.length; k++) {
+        const d = k * MP / sp;
+        const gx = Math.round((m.x - m.vx * d) / MP) * MP, gy = Math.round((m.y - m.vy * d) / MP) * MP;
+        if (seen.has(gx + ',' + gy)) continue;
+        seen.add(gx + ',' + gy);
+        ctx.fillStyle = `rgba(255,255,255,${(fade * STEPS[k]).toFixed(3)})`;
+        px(gx, gy, MP, MP);
+      }
+    }
     for (const s of stars) {
       ctx.globalAlpha = (.25 + s.z * .75) * (.75 + .25 * Math.sin(clock / 600 + s.tw));
       ctx.fillStyle = s.z > .75 ? '#cfe6ff' : '#7f9fd0';
