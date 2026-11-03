@@ -27,6 +27,7 @@
   const ACC = { blue: '#8ee6ff', red: '#ff5c8a' };
   const RIPPLE_MS = 800;
   const BLAST = ['#ff8a30', '#ffd86a', '#ff5cc8', '#ffffff'];   // explosion sparks
+  const DANGER = { red: '#ff5c8a', blue: '#86c5ec' };            // cockpit warning, each side in its own colours
   const FLAME = { blue: ['#4fd0ff', '#e6fbff'], red: ['#ec7a8e', '#ffc4ce'] };   // engine wash: [outer, hot core]; red's are a richer take on the hull pinks
 
   // 17x16 sprite from MONOLITH: H hull-lit, L hull, M wing, S shadow, D cockpit, W weapon-tint
@@ -448,6 +449,21 @@
 
   /* ================= DRAW ================= */
   const snap = v => Math.round(v * DPR) / DPR;
+  const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  function mix(a, b, t) {
+    const A = hexRGB(a), B = hexRGB(b);
+    return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',')})`;
+  }
+  // how close the enemy laser in this lane is to a kill: 0 = safe (7+ squares away) .. 1 = next square hits
+  let dangerPreview = false;   // E key: show the warning on red's left and blue's middle rocket
+  function danger(p, l) {
+    // preview sweeps slowly from a gentle glow to the urgent pulse
+    if (dangerPreview && ((p === 'red' && l === 0) || (p === 'blue' && l === 1))) return .2 + .8 * (.5 + .5 * Math.sin(clock / 1500));
+    const o = other(p);
+    if (S.winner || !S.alive[o][l]) return 0;
+    const rem = laneDist(l) - S.trail[o][l];
+    return rem <= 6 ? (7 - rem) / 6 : 0;
+  }
   function px(x, y, w, h) { ctx.fillRect(snap(x), snap(y), snap(w), snap(h)); }
   function bitmap(rows, x, y, u, col) {
     ctx.fillStyle = col;
@@ -457,6 +473,9 @@
 
   function drawShip(p, l) {
     const pal = PAL[p], ox = shipLeft(l), ny = noseY(p, l), red = p === 'red';
+    // cockpit pulses a warning colour when an enemy laser is one roll away, faster the closer it gets
+    const dz = danger(p, l);
+    const cockpit = dz ? mix(pal.D, DANGER[p], (.5 + .5 * Math.sin(clock / (dz > .6 ? 70 : 140))) * (.45 + .55 * dz)) : pal.D;
     // engine wash, whole pixels, directly under the two inline nozzles
     [6, 9].forEach(c => {
       const h = PX * (2 + Math.floor(Math.random() * 3));
@@ -469,7 +488,7 @@
       const row = SHIP_SPR[r];
       for (let c = 0; c < row.length; c++) {
         const ch = row[c]; if (ch === '.') continue;
-        ctx.fillStyle = pal[ch];
+        ctx.fillStyle = ch === 'D' ? cockpit : pal[ch];
         px(ox + c * PX, red ? ny + r * PX : ny - (r + 1) * PX, PX, PX);
       }
     }
@@ -571,13 +590,8 @@
     ctx.save();
     if (shake > .1) ctx.translate(Math.round((Math.random() - .5) * shake), Math.round((Math.random() - .5) * shake));
 
-    // faint grid, inner lines only (no outer border), lit softly in red's colour towards red's end
-    const gy0 = by, gy1 = by + ROWS * cell;
-    const lines = ctx.createLinearGradient(0, gy0, 0, gy1);
-    lines.addColorStop(0, 'rgba(170,176,190,.08)');
-    lines.addColorStop(.6, 'rgba(170,176,190,.08)');
-    lines.addColorStop(1, 'rgba(255,92,138,.2)');
-    ctx.fillStyle = lines;
+    // faint grid, inner lines only (no outer border)
+    ctx.fillStyle = 'rgba(170,176,190,.08)';
     for (let c = 1; c < COLS; c++) ctx.fillRect(bx + c * cell, by, 1, ROWS * cell);
     for (let r = 1; r < ROWS; r++) ctx.fillRect(bx, by + r * cell, COLS * cell, 1);
 
@@ -657,8 +671,9 @@
     initAudio();
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (S.winner) start(); else if (canRoll()) roll(); }
     if (['1', '2', '3'].includes(e.key) && canFire()) fire(+e.key - 1);
-    // E: replay the explosion on blue's middle rocket, just to look at it
-    if (e.key === 'e' || e.key === 'E') explode('blue', 1);
+    // E: toggle a preview of the danger glow; X: replay the explosion on blue's middle rocket
+    if (e.key === 'e' || e.key === 'E') dangerPreview = !dangerPreview;
+    if (e.key === 'x' || e.key === 'X') explode('blue', 1);
   });
 
   /* ================= LOOP ================= */
