@@ -25,6 +25,9 @@
     red: { H: '#ffd6dc', L: '#f4a3ad', M: '#d9707e', S: '#9c3d4c', D: '#2a0b12', E: '#9c3d4c', W: '#ff5c8a' }
   };
   const ACC = { blue: '#8ee6ff', red: '#ff5c8a' };
+  const RIPPLE_MS = 800;
+  const BLAST = ['#ff8a30', '#ffd86a', '#ff5cc8', '#ffffff'];   // explosion sparks
+  const FLAME = { blue: ['#4fd0ff', '#e6fbff'], red: ['#ec7a8e', '#ffc4ce'] };   // engine wash: [outer, hot core]; red's are a richer take on the hull pinks
 
   // 17x16 sprite from MONOLITH: H hull-lit, L hull, M wing, S shadow, D cockpit, W weapon-tint
   const SHIP_SPR = [
@@ -194,7 +197,9 @@
     const n = Math.round((W * H) / 5200);
     for (let i = 0; i < n; i++) {
       const d = Math.random();
-      stars.push({ x: Math.random() * W, y: Math.random() * H, z: d, s: Math.round(d * 1.7 + .3), v: d * 6 + 1, tw: Math.random() * 6.28 });
+      const k = Math.random();
+      const col = k < .07 ? '#ffd59a' : k < .12 ? '#ffb8cc' : d > .75 ? '#cfe6ff' : '#7f9fd0';   // a few warm amber and soft pink
+      stars.push({ x: Math.random() * W, y: Math.random() * H, z: d, s: Math.round(d * 1.7 + .3), v: d * 6 + 1, tw: Math.random() * 6.28, col });
     }
   }
   // a few small blocky clouds: 4-6 faint squares on a tiny lattice with gaps between them, one or two in bright white,
@@ -207,8 +212,8 @@
     const n = nebula[Math.floor(Math.random() * nebula.length)];
     if (!n) return;
     const [dx, dy] = nebOffset(n);
-    const a = Math.random() * 6.28, v = .07 + Math.random() * .04;   // px per ms, an unhurried drift
-    meteors.push({ x: n.cx + dx, y: n.cy + dy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: 1800 + Math.random() * 900 });
+    const a = Math.floor(Math.random() * 4) * Math.PI / 2, v = .07 + Math.random() * .04;   // straight up, down, left or right; px per ms
+    meteors.push({ x: n.cx + dx, y: n.cy + dy, vx: Math.round(Math.cos(a)) * v, vy: Math.round(Math.sin(a)) * v, t: 0, life: 1800 + Math.random() * 900 });
     n.glint = 1;
   }
   function makeNebula() {
@@ -256,7 +261,7 @@
   /* ================= STATE ================= */
   let mode = 'cpu';             // 'cpu': you are red, the computer is blue; 'pvp': pass and play
   let S;                        // game state
-  let slugs = [], sparks = [], debris = [], shake = 0, flash = 0, clock = 0;
+  let slugs = [], sparks = [], debris = [], rings = [], shake = 0, flash = 0, clock = 0;
 
   function newGame() {
     S = {
@@ -264,9 +269,10 @@
       trail: { red: [0, 0, 0], blue: [0, 0, 0] },
       alive: { red: [true, true, true], blue: [true, true, true] },
       kills: { red: 0, blue: 0 },
-      shot: null, winner: null, cpuTimer: null
+      shot: null, winner: null, cpuTimer: null,
+      cleared: [null, null, null] // per lane: when its lasers started fading after a kill
     };
-    slugs = []; sparks = []; debris = []; shake = 0; flash = 0;
+    slugs = []; sparks = []; debris = []; rings = []; shake = 0; flash = 0;
   }
 
   const isCpu = p => mode === 'cpu' && p === 'blue';
@@ -311,25 +317,39 @@
     S.trail[s.p][s.l] = s.goal;
     S.shot.inflight--;
     for (let i = 0; i < 3; i++) sparks.push({ x: s.x, y: s.goalY, vx: (Math.random() - .5) * 3, vy: (Math.random() - .5) * 3, l: 1, c: s.col });
+    // lasers never overlap: a block pushed into the enemy's streak knocks one block off its tip
+    const o = other(s.p), over = S.trail[s.p][s.l] + S.trail[o][s.l] - laneDist(s.l);
+    if (over > 0) {
+      S.trail[o][s.l] = Math.max(0, S.trail[o][s.l] - over);
+      for (let i = 0; i < 4; i++) sparks.push({ x: s.x, y: s.goalY, vx: (Math.random() - .5) * 4, vy: (Math.random() - .5) * 4, l: 1, c: ACC[o] });
+    }
     sfxTick();
     if (s.goal >= laneDist(s.l)) destroy(other(s.p), s.l, s.p);
   }
 
   function destroy(p, l, by_) {
     S.alive[p][l] = false;
+    S.cleared[l] = clock;                               // both lasers in this lane fade away
     S.kills[by_]++;
     S.shot.hit = true;
+    explode(p, l);
+  }
+
+  // the blast itself: pixel debris, sparks, ripples, shake, flash and sound (no change to the game)
+  function explode(p, l) {
     const pal = PAL[p];
+    const box = shipBox(p, l), cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+    // every hull pixel flies straight out from the middle of the rocket, so the debris spreads in a rough circle
     for (let r = 0; r < SHIP_SPR.length; r++) for (let c = 0; c < 17; c++) {
       const ch = SHIP_SPR[r][c]; if (ch === '.') continue;
-      const pt = spritePt(p, l, r, c), cx = laneX(l);
-      debris.push({
-        x: pt.x, y: pt.y, vx: (pt.x - cx) / (PX * 3) + (Math.random() - .5) * 2.4,
-        vy: (Math.random() - .5) * 2.4 - DIR[p] * Math.random() * 1.6, l: 1, col: pal[ch], s: PX
-      });
+      const pt = spritePt(p, l, r, c);
+      const a = Math.atan2(pt.y - cy, pt.x - cx) + (Math.random() - .5) * .9, v = .6 + Math.random() * 1.2;
+      debris.push({ x: pt.x, y: pt.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, l: 1, col: pal[ch], s: PX });
     }
-    const box = shipBox(p, l);
-    for (let i = 0; i < 26; i++) sparks.push({ x: box.x + box.w / 2, y: box.y + box.h / 2, vx: (Math.random() - .5) * 8, vy: (Math.random() - .5) * 8, l: 1, c: i % 2 ? '#ffd08a' : '#ffffff' });
+    for (let i = 0; i < 36; i++) sparks.push({ x: cx, y: cy, vx: (Math.random() - .5) * 9, vy: (Math.random() - .5) * 9, l: 1, c: BLAST[i % BLAST.length] });
+    // concentric ripples in the downed rocket's colour: all start together, nested one inside the other,
+    // and spread out as a set, the outer ones fainter
+    for (let k = 0; k < 2; k++) rings.push({ x: cx, y: cy, r0: cell * (.4 + k * .8), r: 0, t: 0, a: 1 - k * .35, col: ACC[p] });
     shake = Math.min(shake + 12, 18); flash = 1;
     sfxBlast();
   }
@@ -398,8 +418,16 @@
       const s = sparks[i]; s.x += s.vx * f; s.y += s.vy * f; s.vx *= .97; s.vy *= .97; s.l -= .04 * f;
       if (s.l <= 0) sparks.splice(i, 1);
     }
+    for (let i = rings.length - 1; i >= 0; i--) {
+      const g = rings[i];
+      g.t += dt;
+      const k = Math.min(1, g.t / RIPPLE_MS);
+      g.r = g.r0 + k * cell * 1.6;                       // keeps drifting outward at a steady pace
+      g.l = Math.pow(1 - k, 1.5);                         // while fading away
+      if (k >= 1) rings.splice(i, 1);
+    }
     for (let i = debris.length - 1; i >= 0; i--) {
-      const d = debris[i]; d.x += d.vx * f; d.y += d.vy * f; d.vx *= .985; d.vy *= .985; d.l -= .008 * f;
+      const d = debris[i]; d.x += d.vx * f; d.y += d.vy * f; d.vx *= .96; d.vy *= .96; d.l -= .016 * f;
       if (d.l <= 0) debris.splice(i, 1);
     }
     // the winner's surviving rockets keep popping fireworks
@@ -433,9 +461,9 @@
     [6, 9].forEach(c => {
       const h = PX * (2 + Math.floor(Math.random() * 3));
       const y0 = red ? ny + 16 * PX : ny - 16 * PX - h;
-      ctx.fillStyle = '#ffae50'; px(ox + c * PX, y0, 2 * PX, h);
+      ctx.fillStyle = FLAME[p][0]; px(ox + c * PX, y0, 2 * PX, h);
       const h2 = Math.max(PX, Math.round(h * .55 / PX) * PX);
-      ctx.fillStyle = '#ffeab4'; px(ox + c * PX + PX / 2, red ? y0 : y0 + h - h2, PX, h2);
+      ctx.fillStyle = FLAME[p][1]; px(ox + c * PX + PX / 2, red ? y0 : y0 + h - h2, PX, h2);
     });
     for (let r = 0; r < SHIP_SPR.length; r++) {
       const row = SHIP_SPR[r];
@@ -463,9 +491,12 @@
     px(laneX(l) - tw / 2, noseY(p, l) + DIR[p] * (i - .5) * cell - tw / 2, tw, tw);
   }
 
+  const LASER_FADE_MS = 700;
   function drawTrail(p, l) {
     const len = S.trail[p][l]; if (!len) return;
-    ctx.globalAlpha = S.alive[p][l] ? 1 : .35;
+    const fade = S.cleared[l] === null ? 1 : 1 - (clock - S.cleared[l]) / LASER_FADE_MS;
+    if (fade <= 0) return;
+    ctx.globalAlpha = fade;
     ctx.fillStyle = ACC[p]; ctx.shadowColor = ACC[p]; ctx.shadowBlur = 8;
     for (let i = 1; i <= len; i++) laneSquare(p, l, i);
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
@@ -529,8 +560,10 @@
       }
     }
     for (const s of stars) {
-      ctx.globalAlpha = (.25 + s.z * .75) * (.75 + .25 * Math.sin(clock / 600 + s.tw));
-      ctx.fillStyle = s.z > .75 ? '#cfe6ff' : '#7f9fd0';
+      // the brightest stars twinkle a little more
+      const tw = Math.sin(clock / 600 + s.tw);
+      ctx.globalAlpha = (.25 + s.z * .75) * (s.z > .85 ? .65 + .35 * tw : .75 + .25 * tw);
+      ctx.fillStyle = s.col;
       ctx.fillRect(Math.round(s.x), Math.round(s.y), s.s, s.s);
     }
     ctx.globalAlpha = 1;
@@ -581,6 +614,20 @@
     ctx.globalAlpha = 1;
     ctx.restore();
 
+    // ripples sit outside the screen shake so they only ever move outward
+    for (const g of rings) {
+      ctx.globalAlpha = Math.max(0, g.l) * g.a; ctx.fillStyle = g.col;
+      const d = PX * 2, u = PX * 2.7, R = Math.max(1, Math.round(g.r / u));
+      const seen = new Set();
+      for (let i = 0, n = Math.max(8, R * 8); i < n; i++) {
+        const a = i / n * 6.28, gx = Math.round(Math.cos(a) * R), gy = Math.round(Math.sin(a) * R);
+        if (seen.has(gx * 999 + gy)) continue;
+        seen.add(gx * 999 + gy);
+        px(g.x + gx * u - d / 2, g.y + gy * u - d / 2, d, d);
+      }
+    }
+    ctx.globalAlpha = 1;
+
     drawDie();
     drawIcons();
     if (flash > .01) { ctx.fillStyle = `rgba(255,220,180,${flash * .25})`; ctx.fillRect(0, 0, W, H); }
@@ -610,6 +657,8 @@
     initAudio();
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (S.winner) start(); else if (canRoll()) roll(); }
     if (['1', '2', '3'].includes(e.key) && canFire()) fire(+e.key - 1);
+    // E: replay the explosion on blue's middle rocket, just to look at it
+    if (e.key === 'e' || e.key === 'E') explode('blue', 1);
   });
 
   /* ================= LOOP ================= */
