@@ -7,8 +7,9 @@
   // portrait: the grid fills the screen edge to edge; landscape: a square as tall as the screen.
   // column counts are odd so every lane runs down the middle of a cell
   const MIN_COLS = 21, MIN_PLAY_ROWS = 24, EDGE = 8, LANE_GAP = 6;
-  // lane lengths are the same on every screen: ~5-6 average rolls for an outer kill, 4 for the middle
-  const OUTER_DIST = 18, MID_DIST = 14;
+  // lane lengths are the same on every screen: ~5 average rolls for an outer kill, 4 for the middle
+  const OUTER_DIST = 16, MID_DIST = 12;
+  const FIT_DIST = 18;                                  // landscape squares are sized so this many span the screen
   let COLS = 21, ROWS = 31;
   let LANE_C = [4.5, 10.5, 16.5];                       // lane centres, in cells
   // nose rows: the middle rockets sit two squares further forward
@@ -162,7 +163,7 @@
         ROWS = odd(Math.floor((H - 2 * EDGE) / base)); cell = base;
         for (let n = ROWS - 2; n >= 9; n -= 2) {
           const c = Math.floor((H - 2 * EDGE) / n), r = room(n, c);
-          if (r.redOuterMax - r.reach < OUTER_DIST) break;
+          if (r.redOuterMax - r.reach < FIT_DIST) break;
           ROWS = n; cell = c;
         }
         COLS = ROWS;
