@@ -15,7 +15,7 @@
   const NOSE = { blue: [], red: [] };
   const DIR = { blue: 1, red: -1 };                     // which way each side fires
   const WINS = 2;
-  const VOLLEY_MS = 130;
+  const VOLLEY_MS = 70;
   const laneDist = l => NOSE.red[l] - NOSE.blue[l];
   const other = p => (p === 'red' ? 'blue' : 'red');
 
@@ -27,6 +27,7 @@
   const ACC = { blue: '#8ee6ff', red: '#ff5c8a' };
   const RIPPLE_MS = 800;
   const BLAST = ['#ff8a30', '#ffd86a', '#ff5cc8', '#ffffff'];   // explosion sparks
+  const HOT = '#fff6c8', COOL_MS = 450;                         // fresh laser blocks land white-yellow and cool
   const DANGER = { red: '#ff5c8a', blue: '#86c5ec' };            // cockpit warning, each side in its own colours
   const FLAME = { blue: ['#4fd0ff', '#e6fbff'], red: ['#ec7a8e', '#ffc4ce'] };   // engine wash: [outer, hot core]; red's are a richer take on the hull pinks
 
@@ -271,7 +272,8 @@
       alive: { red: [true, true, true], blue: [true, true, true] },
       kills: { red: 0, blue: 0 },
       shot: null, winner: null, cpuTimer: null,
-      cleared: [null, null, null] // per lane: when its lasers started fading after a kill
+      cleared: [null, null, null], // per lane: when its lasers started fading after a kill
+      landT: { red: [[], [], []], blue: [[], [], []] }   // when each laser block landed, for its cooling glow
     };
     slugs = []; sparks = []; debris = []; rings = []; shake = 0; flash = 0;
   }
@@ -297,7 +299,7 @@
   function volley() {
     const { p, l } = S.shot;
     const dir = DIR[p], col = ACC[p];
-    const speed = cell / 22;                              // px per ms
+    const speed = cell / 9;                               // px per ms
     const goal = S.shot.start + (++S.shot.sent);
     const nx = laneX(l), ny = noseY(p, l);
     // the round that actually extends the line
@@ -316,6 +318,7 @@
 
   function land(s) {
     S.trail[s.p][s.l] = s.goal;
+    S.landT[s.p][s.l][s.goal] = clock;
     S.shot.inflight--;
     for (let i = 0; i < 3; i++) sparks.push({ x: s.x, y: s.goalY, vx: (Math.random() - .5) * 3, vy: (Math.random() - .5) * 3, l: 1, c: s.col });
     // lasers never overlap: a block pushed into the enemy's streak knocks one block off its tip
@@ -516,8 +519,14 @@
     const fade = S.cleared[l] === null ? 1 : 1 - (clock - S.cleared[l]) / LASER_FADE_MS;
     if (fade <= 0) return;
     ctx.globalAlpha = fade;
-    ctx.fillStyle = ACC[p]; ctx.shadowColor = ACC[p]; ctx.shadowBlur = 8;
-    for (let i = 1; i <= len; i++) laneSquare(p, l, i);
+    ctx.shadowBlur = 8;
+    for (let i = 1; i <= len; i++) {
+      // fresh blocks land white-hot and cool to the player's colour
+      const t = S.landT[p][l][i], heat = t === undefined ? 0 : Math.max(0, 1 - (clock - t) / COOL_MS) ** 2;   // a quick laser flash
+      ctx.fillStyle = heat > 0 ? mix(ACC[p], HOT, heat) : ACC[p];
+      ctx.shadowColor = heat > .3 ? HOT : ACC[p];
+      laneSquare(p, l, i);
+    }
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
   }
 
