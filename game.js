@@ -4,9 +4,10 @@
   let W = 0, H = 0, DPR = 1;
 
   /* ================= BOARD ================= */
-  // portrait: the grid fills the screen edge to edge; landscape: a square as tall as the screen.
+  // the grid is always square: as tall as the screen in landscape, as wide as it in portrait.
   // column counts are odd so every lane runs down the middle of a cell
-  const MIN_COLS = 21, MIN_PLAY_ROWS = 24, EDGE = 8, LANE_GAP = 6;
+  const MIN_PLAY_ROWS = 24, EDGE = 8, LANE_GAP = 6;
+  const PHONE_PX = .19;                                 // rocket pixel size per square on phones (landscape uses .15)
   // lane lengths are the same on every screen: ~5 average rolls for an outer kill, 4 for the middle
   const OUTER_DIST = 16, MID_DIST = 12;
   const FIT_DIST = 18;                                  // landscape squares are sized so this many span the screen
@@ -57,17 +58,6 @@
   /* ================= PIXEL ICONS ================= */
   const PIPS = { 1: [[4, 4]], 2: [[2, 2], [6, 6]], 3: [[2, 2], [4, 4], [6, 6]], 4: [[2, 2], [6, 2], [2, 6], [6, 6]],
     5: [[2, 2], [6, 2], [4, 4], [2, 6], [6, 6]], 6: [[2, 2], [6, 2], [2, 4], [6, 4], [2, 6], [6, 6]] };
-  const REPLAY = [
-    '...XXX.X.',
-    '.XX...XX.',
-    '.X...XXX.',
-    'X........',
-    'X.......X',
-    'X.......X',
-    '.X.....X.',
-    '.XX...XX.',
-    '...XXX...'
-  ];
   const PERSON = ['.XXX.', '.XXX.', '..X..', 'XXXXX', '.XXX.', '.X.X.', '.X.X.'];
   const ROBOT = ['..X..', 'XXXXX', 'X.X.X', 'XXXXX', '.XXX.', 'XXXXX', '.X.X.'];
   const SPK_ON = ['...X.....', '..XX..X..', 'XXXX...X.', 'XXXX...X.', 'XXXX...X.', '..XX..X..', '...X.....'];
@@ -149,12 +139,12 @@
     const fwd = (OUTER_DIST - MID_DIST) / 2;
     // rows a formation can use in a grid of n rows of size c (hull + engine wash ≈ 20 sprite px);
     // red's middle rocket, `fwd` rows ahead of its outer pair, has to stay clear of the die
-    const room = (n, c) => {
-      const top0 = Math.round((H - c * n) / 2), reach = Math.ceil(20 * PX / c);
+    const room = (n, c, top0 = Math.round((H - c * n) / 2)) => {
+      const reach = Math.ceil(20 * PX / c);
       return { reach, redOuterMax: Math.min(n - reach, Math.floor((die.y - 6 - 20 * PX - top0) / c) + fwd) };
     };
     // sprite pixels snap to device pixels, so they can be fractional CSS px and stay crisp
-    const setPX = c => { PX = Math.max(1, Math.round(c * .15 * DPR)) / DPR; };
+    const setPX = (c, k = .15) => { PX = Math.max(1, Math.round(c * k * DPR)) / DPR; };
 
     let gap = LANE_GAP;
     if (W >= H) {
@@ -176,22 +166,25 @@
       // keep the lanes the same distance apart on screen as with the base squares
       gap = Math.max(4, Math.round(LANE_GAP * base / cell));
     } else {
-      // portrait: the grid fills the screen; the fixed-length lanes sit centred in it
-      if (fresh) {
-        cell = Math.max(6, Math.floor(Math.min((W - 2 * EDGE) / MIN_COLS, (H - top - bottom) / MIN_PLAY_ROWS)));
-        COLS = odd(Math.floor((W - 2 * EDGE) / cell));
-        ROWS = Math.floor((H - 2 * EDGE) / cell);
-      } else {
-        // mid-game resize: keep the same squares, just rescale them
-        cell = Math.max(6, Math.floor(Math.min((W - 2 * EDGE) / COLS, (H - 2 * EDGE) / ROWS)));
-      }
-      setPX(cell);
+      // portrait: a square too, as wide as the screen, with about as many squares as landscape
+      // (the 18-square sizing lanes plus a rocket's length at each end; rockets scale with the squares here)
+      if (fresh) COLS = ROWS = odd(FIT_DIST + 2 * Math.ceil(20 * PHONE_PX) + 1);
+      cell = Math.max(6, Math.floor((W - 2 * EDGE) / COLS));
+      setPX(cell, PHONE_PX);
     }
     bx = Math.round((W - cell * COLS) / 2);
     by = Math.round((H - cell * ROWS) / 2);
+    if (W < H) {
+      // the die sits just under the square, and the pair is centred below the icons
+      const side = cell * ROWS, dieH = 9 * u, g = 2 * u + 8;
+      if (top + side + g + dieH + EDGE <= H) {
+        by = Math.round(Math.max(top, (H - side - g - dieH) / 2));
+        die.y = by + side + g;
+      }
+    }
     if (fresh) {
       LANE_C = [COLS / 2 - gap, COLS / 2, COLS / 2 + gap];
-      const { reach, redOuterMax } = room(ROWS, cell);
+      const { reach, redOuterMax } = room(ROWS, cell, by);
       const blueOuter = reach + Math.max(0, Math.floor((redOuterMax - reach - OUTER_DIST) / 2));
       const redOuter = Math.min(redOuterMax, blueOuter + OUTER_DIST);
       NOSE.blue = [blueOuter, blueOuter + fwd, blueOuter];
@@ -438,12 +431,6 @@
       const d = debris[i]; d.x += d.vx * f; d.y += d.vy * f; d.vx *= .96; d.vy *= .96; d.l -= .016 * f;
       if (d.l <= 0) debris.splice(i, 1);
     }
-    // the winner's surviving rockets keep popping fireworks
-    if (S.winner && Math.random() < .08 * f) {
-      const ls = [0, 1, 2].filter(l => S.alive[S.winner][l]);
-      const l = ls[Math.floor(Math.random() * ls.length)], b = shipBox(S.winner, l);
-      for (let i = 0; i < 10; i++) sparks.push({ x: b.x + b.w / 2, y: b.y + b.h / 2, vx: (Math.random() - .5) * 6, vy: (Math.random() - .5) * 6, l: 1, c: ACC[S.winner] });
-    }
     for (const s of stars) { s.y += s.v * dt / 1000; if (s.y > H) { s.y = -2; s.x = Math.random() * W; } }
     if ((meteorT -= dt) <= 0) { launchMeteor(); meteorT = 6000 + Math.random() * 9000; }
     for (let i = meteors.length - 1; i >= 0; i--) {
@@ -462,7 +449,8 @@
     return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',')})`;
   }
   // how close the enemy laser in this lane is to a kill: 0 = safe (7+ squares away) .. 1 = next square hits
-  let dangerPreview = false;   // E key: show the warning on red's left and blue's middle rocket
+  let previewWinner = 'blue';  // E key alternates who wins the preview
+  let dangerPreview = false;   // D key: show the warning on red's left and blue's middle rocket
   function danger(p, l) {
     // preview sweeps slowly from a gentle glow to the urgent pulse
     if (dangerPreview && ((p === 'red' && l === 0) || (p === 'blue' && l === 1))) return .2 + .8 * (.5 + .5 * Math.sin(clock / 1500));
@@ -513,7 +501,7 @@
 
   // one laser block in the middle of the i-th cell along a lane; the trail and the roll preview share it
   function laneSquare(p, l, i) {
-    const tw = Math.max(2, PX) * 2;
+    const tw = Math.max(2, PX) * (W < H ? 2.5 : 2);   // a touch chunkier on phones
     px(laneX(l) - tw / 2, noseY(p, l) + DIR[p] * (i - .5) * cell - tw / 2, tw, tw);
   }
 
@@ -534,13 +522,69 @@
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
   }
 
+  // squat 5-row pixel letters with 1-pixel strokes and wide 2-pixel tracking; just the ones the win screen needs
+  const FONT = {
+    B: ['XXX.', 'X..X', 'XXXX', 'X..X', 'XXX.'],
+    D: ['XXX.', 'X..X', 'X..X', 'X..X', 'XXX.'],
+    E: ['XXX', 'X..', 'XXX', 'X..', 'XXX'],
+    L: ['X..', 'X..', 'X..', 'X..', 'XXX'],
+    N: ['X...X', 'XX..X', 'X.X.X', 'X..XX', 'X...X'],
+    O: ['.XX.', 'X..X', 'X..X', 'X..X', '.XX.'],
+    A: ['.XX.', 'X..X', 'XXXX', 'X..X', 'X..X'],
+    S: ['.XXX', 'X...', '.XX.', '...X', 'XXX.'],
+    T: ['XXX', '.X.', '.X.', '.X.', '.X.'],
+    R: ['XXX.', 'X..X', 'XXX.', 'X.X.', 'X..X'],
+    U: ['X..X', 'X..X', 'X..X', 'X..X', '.XX.'],
+    W: ['X...X', 'X.X.X', 'X.X.X', 'X.X.X', '.X.X.'],
+    ' ': ['..', '..', '..', '..', '..']
+  };
+  const TRACK = 2, FONT_H = 5;
+  const textWidth = str => [...str].reduce((w, ch) => w + FONT[ch][0].length + TRACK, -TRACK);
+  // heavier weight: each letter is stamped four times, nudged right and down, so strokes come out ~1.5 pixels thick
+  function drawText(str, x, y, u, col) {
+    const t = u * .5;
+    for (const ch of str) {
+      for (const [ox, oy] of [[0, 0], [t, 0], [0, t], [t, t]]) bitmap(FONT[ch], x + ox, y + oy, u, col);
+      x += (FONT[ch][0].length + TRACK) * u;
+    }
+  }
+
+  // the winner: a light veil over the game with "BLUE WON" / "RED WON" in their colour;
+  // the die turns into the restart icon, and tapping the words plays again too
+  function winLayout() {
+    const text = (S.winner === 'blue' ? 'BLUE' : 'RED') + ' WON';
+    const u = Math.max(2, Math.round(cell * .3)), w = textWidth(text) * u, h = FONT_H * u;
+    return { text, u, x: Math.round(bx + COLS * cell / 2 - w / 2), y: Math.round(by + ROWS * cell / 2 - h / 2), w, h };
+  }
+  const winRect = () => winLayout();
+  function drawWin() {
+    const L = winLayout();
+    ctx.fillStyle = 'rgba(4,3,10,.55)'; ctx.fillRect(0, 0, W, H);
+    drawText(L.text, L.x, L.y, L.u, ACC[S.winner]);
+  }
+
+  // after a win the die gives way to a solid block in the winner's colour with RESTART cut out in dark letters,
+  // a size smaller than the "… WON" text
+  function restartRect() {
+    const u = Math.max(1, Math.round(Math.max(2, Math.round(cell * .3)) * .6)), tw = textWidth('RESTART') * u;
+    const w = tw + 8 * u, h = FONT_H * u + 6 * u;
+    return { x: Math.round(W / 2 - w / 2), y: Math.round(die.y + die.u * 4.5 - h / 2), w, h, u, tw };
+  }
+  function drawRestart() {
+    const r = restartRect(), u = r.u;
+    ctx.fillStyle = ACC[S.winner];
+    px(r.x + u, r.y, r.w - 2 * u, r.h); px(r.x, r.y + u, r.w, r.h - 2 * u);   // corners knocked off
+    drawText('RESTART', r.x + (r.w - r.tw) / 2, r.y + 3 * u, u, '#04030a');
+  }
+
   function drawDie() {
     const { x, y, u } = die;
     const p = S.winner || S.turn;
     const bob = canRoll() && Math.floor(clock / 380) % 2 ? -u : 0;
     const jit = S.rollT > 0 ? [(Math.random() - .5) * u * 2, (Math.random() - .5) * u * 2] : [0, 0];
     const dx = x + jit[0], dy = y + jit[1] + bob;
-    const dim = isCpu(S.turn) && !S.winner;
+    if (S.winner) { drawRestart(); return; }
+    const dim = isCpu(S.turn);
     ctx.globalAlpha = dim ? .55 : 1;
     // shadow block, then face with the corners knocked off
     ctx.fillStyle = PAL[p].S;
@@ -548,8 +592,7 @@
     ctx.fillStyle = ACC[p];
     px(dx + u, dy, 7 * u, 8 * u); px(dx, dy + u, 9 * u, 6 * u);
     ctx.fillStyle = 'rgba(255,255,255,.25)'; px(dx + u, dy, 7 * u, u / 2);
-    if (S.winner) bitmap(REPLAY, dx, dy - u / 2, u, '#04030a');
-    else if (S.face) { ctx.fillStyle = '#04030a'; for (const [c, r] of PIPS[S.face]) px(dx + c * u, dy + r * u - u / 2, u, u); }
+    if (S.face) { ctx.fillStyle = '#04030a'; for (const [c, r] of PIPS[S.face]) px(dx + c * u, dy + r * u - u / 2, u, u); }
     else { ctx.fillStyle = '#04030a'; px(dx + 4 * u, dy + 3.5 * u, u, u); }
     ctx.globalAlpha = 1;
   }
@@ -657,6 +700,7 @@
     }
     ctx.globalAlpha = 1;
 
+    if (S.winner) drawWin();
     drawDie();
     drawIcons();
     if (flash > .01) { ctx.fillStyle = `rgba(255,220,180,${flash * .25})`; ctx.fillRect(0, 0, W, H); }
@@ -672,6 +716,7 @@
     if (inside(x, y, soundRect(), 10)) { muted = !muted; return; }
     if (inside(x, y, creditRect(), 10)) { window.open(CREDIT_URL, '_blank', 'noopener'); return; }
     if (inside(x, y, modeRect(), 10)) { mode = mode === 'cpu' ? 'pvp' : 'cpu'; start(); return; }
+    if (S.winner && (inside(x, y, winRect(), 10) || inside(x, y, restartRect(), 10))) { start(); return; }
     if (inside(x, y, { x: die.x, y: die.y, w: die.u * 9, h: die.u * 9 }, 16)) {
       if (S.winner) start(); else if (canRoll()) roll();
       return;
@@ -687,8 +732,16 @@
     initAudio();
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (S.winner) start(); else if (canRoll()) roll(); }
     if (['1', '2', '3'].includes(e.key) && canFire()) fire(+e.key - 1);
-    // E: toggle a preview of the danger glow; X: replay the explosion on blue's middle rocket
-    if (e.key === 'e' || e.key === 'E') dangerPreview = !dangerPreview;
+    // previews: E shows the win screen (again to play on), D toggles the danger glow, X replays the explosion
+    if (e.key === 'd' || e.key === 'D') dangerPreview = !dangerPreview;
+    if (e.key === 'e' || e.key === 'E') {
+      if (S.winner) start();
+      else {
+        // end the game on the spot, red and blue taking turns to win
+        if (S.cpuTimer) clearTimeout(S.cpuTimer);
+        S.winner = previewWinner = other(previewWinner); S.roll = null; S.shot = null;
+      }
+    }
     if (e.key === 'x' || e.key === 'X') explode('blue', 1);
   });
 
