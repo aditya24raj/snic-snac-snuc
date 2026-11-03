@@ -72,6 +72,9 @@
   const ROBOT = ['..X..', 'XXXXX', 'X.X.X', 'XXXXX', '.XXX.', 'XXXXX', '.X.X.'];
   const SPK_ON = ['...X.....', '..XX..X..', 'XXXX...X.', 'XXXX...X.', 'XXXX...X.', '..XX..X..', '...X.....'];
   const SPK_OFF = ['...X.....', '..XX.....', 'XXXX.X.X.', 'XXXX..X..', 'XXXX.X.X.', '..XX.....', '...X.....'];
+  const AT = ['.XXXXX.', 'X.....X', 'X.XXX.X', 'X.X.X.X', 'X.XXXX.', 'X......', '.XXXXX.'];
+  // credit: the paper game this is based on, from the tischduell Instagram reel
+  const CREDIT_URL = 'https://www.instagram.com/tischduell/';
 
   /* ================= SOUND (from MONOLITH) ================= */
   let ac = null, master = null, noiseBuf = null, muted = false;
@@ -554,8 +557,10 @@
   // top corners: sound toggle and mode toggle
   const soundRect = () => ({ x: ICON_PAD, y: ICON_PAD, w: 9 * iconU, h: 7 * iconU });
   const modeRect = () => ({ x: W - ICON_PAD - 11 * iconU, y: ICON_PAD, w: 11 * iconU, h: 7 * iconU });
+  const creditRect = () => ({ x: W - ICON_PAD - 7 * iconU, y: H - ICON_PAD - 7 * iconU, w: 7 * iconU, h: 7 * iconU });
   function drawIcons() {
-    const sr = soundRect(), mr = modeRect();
+    const sr = soundRect(), mr = modeRect(), cr = creditRect();
+    bitmap(AT, cr.x, cr.y, iconU, '#5f7fae');
     bitmap(muted ? SPK_OFF : SPK_ON, sr.x, sr.y, iconU, '#5f7fae');
     bitmap(PERSON, mr.x, mr.y, iconU, ACC.red);
     bitmap(mode === 'cpu' ? ROBOT : PERSON, mr.x + 6 * iconU, mr.y, iconU, ACC.blue);
@@ -665,6 +670,7 @@
     initAudio();
     const x = e.clientX, y = e.clientY;
     if (inside(x, y, soundRect(), 10)) { muted = !muted; return; }
+    if (inside(x, y, creditRect(), 10)) { window.open(CREDIT_URL, '_blank', 'noopener'); return; }
     if (inside(x, y, modeRect(), 10)) { mode = mode === 'cpu' ? 'pvp' : 'cpu'; start(); return; }
     if (inside(x, y, { x: die.x, y: die.y, w: die.u * 9, h: die.u * 9 }, 16)) {
       if (S.winner) start(); else if (canRoll()) roll();
