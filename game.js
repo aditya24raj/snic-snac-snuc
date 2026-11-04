@@ -65,6 +65,9 @@
   const AT = ['.XXXXX.', 'X.....X', 'X.XXX.X', 'X.X.X.X', 'X.XXXX.', 'X......', '.XXXXX.'];
   // credit: the paper game this is based on, from the tischduell Instagram reel
   const CREDIT_URL = 'https://www.instagram.com/tischduell/';
+  // built with Claude: a pixel starburst in Claude's clay orange, beside the @
+  const CLAUDE = ['X..X..X', '.X.X.X.', '..XXX..', 'XXXXXXX', '..XXX..', '.X.X.X.', 'X..X..X'];
+  const CLAUDE_URL = 'https://claude.ai/';
 
   /* ================= SOUND (from MONOLITH) ================= */
   let ac = null, master = null, noiseBuf = null, muted = false;
@@ -525,6 +528,13 @@
   // squat 5-row pixel letters with 1-pixel strokes and wide 2-pixel tracking; just the ones the win screen needs
   const FONT = {
     B: ['XXX.', 'X..X', 'XXXX', 'X..X', 'XXX.'],
+    C: ['.XX', 'X..', 'X..', 'X..', '.XX'],
+    I: ['X', 'X', 'X', 'X', 'X'],
+    '/': ['..X', '..X', '.X.', 'X..', 'X..'],
+    H: ['X..X', 'X..X', 'XXXX', 'X..X', 'X..X'],
+    P: ['XXX.', 'X..X', 'XXX.', 'X...', 'X...'],
+    Y: ['X.X', 'X.X', '.X.', '.X.', '.X.'],
+    '@': ['.XXX.', 'X.X.X', 'X.XXX', 'X....', '.XXX.'],
     D: ['XXX.', 'X..X', 'X..X', 'X..X', 'XXX.'],
     E: ['XXX', 'X..', 'XXX', 'X..', 'XXX'],
     L: ['X..', 'X..', 'X..', 'X..', 'XXX'],
@@ -601,9 +611,23 @@
   const soundRect = () => ({ x: ICON_PAD, y: ICON_PAD, w: 9 * iconU, h: 7 * iconU });
   const modeRect = () => ({ x: W - ICON_PAD - 11 * iconU, y: ICON_PAD, w: 11 * iconU, h: 7 * iconU });
   const creditRect = () => ({ x: W - ICON_PAD - 7 * iconU, y: H - ICON_PAD - 7 * iconU, w: 7 * iconU, h: 7 * iconU });
+  let hoverCredit = null;   // 'claude' | 'at' | null, from the mouse
+  const claudeRect = () => ({ x: W - ICON_PAD - 17 * iconU, y: H - ICON_PAD - 7 * iconU, w: 7 * iconU, h: 7 * iconU });
   function drawIcons() {
-    const sr = soundRect(), mr = modeRect(), cr = creditRect();
+    const sr = soundRect(), mr = modeRect(), cr = creditRect(), clr = claudeRect();
     bitmap(AT, cr.x, cr.y, iconU, '#5f7fae');
+    bitmap(CLAUDE, clr.x, clr.y, iconU, '#d97757');
+    // a small, faint grey "CREDITS" caption over the two credit icons, sized so it is never wider than they are;
+    // hovering an icon swaps the caption for what that credit is, at the same size, still right-aligned
+    const LABEL = hoverCredit === 'claude' ? '// BUILT WITH CLAUDE' : hoverCredit === 'at' ? '// INSPIRED BY @TISCHDUELL' : '// CREDITS';
+    // whole-pixel scale and a single stamp (no heavy weight), so the thin letters stay crisp
+    const iw = cr.x + cr.w - clr.x, tw = textWidth(LABEL);
+    const lu = Math.max(1, Math.floor(Math.min(iconU / 2, iw / textWidth('// CREDITS'))));
+    let lx = Math.round(cr.x + cr.w - tw * lu);
+    const ly = Math.round(clr.y - 2 * iconU - FONT_H * lu);
+    ctx.globalAlpha = .45;
+    for (const ch of LABEL) { bitmap(FONT[ch], lx, ly, lu, '#9aa0aa'); lx += (FONT[ch][0].length + TRACK) * lu; }
+    ctx.globalAlpha = 1;
     bitmap(muted ? SPK_OFF : SPK_ON, sr.x, sr.y, iconU, '#5f7fae');
     bitmap(PERSON, mr.x, mr.y, iconU, ACC.red);
     bitmap(mode === 'cpu' ? ROBOT : PERSON, mr.x + 6 * iconU, mr.y, iconU, ACC.blue);
@@ -709,12 +733,20 @@
   /* ================= INPUT ================= */
   const inside = (x, y, r, pad = 0) => x >= r.x - pad && x <= r.x + r.w + pad && y >= r.y - pad && y <= r.y + r.h + pad;
 
+  cv.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse') return;
+    const x = e.clientX, y = e.clientY;
+    hoverCredit = inside(x, y, claudeRect(), 4) ? 'claude' : inside(x, y, creditRect(), 4) ? 'at' : null;
+    cv.style.cursor = hoverCredit ? 'pointer' : '';
+  });
+  cv.addEventListener('pointerleave', () => { hoverCredit = null; cv.style.cursor = ''; });
   cv.addEventListener('pointerdown', e => {
     e.preventDefault();
     initAudio();
     const x = e.clientX, y = e.clientY;
     if (inside(x, y, soundRect(), 10)) { muted = !muted; return; }
     if (inside(x, y, creditRect(), 10)) { window.open(CREDIT_URL, '_blank', 'noopener'); return; }
+    if (inside(x, y, claudeRect(), 10)) { window.open(CLAUDE_URL, '_blank', 'noopener'); return; }
     if (inside(x, y, modeRect(), 10)) { mode = mode === 'cpu' ? 'pvp' : 'cpu'; start(); return; }
     if (S.winner && (inside(x, y, winRect(), 10) || inside(x, y, restartRect(), 10))) { start(); return; }
     if (inside(x, y, { x: die.x, y: die.y, w: die.u * 9, h: die.u * 9 }, 16)) {
