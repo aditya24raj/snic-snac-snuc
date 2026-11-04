@@ -533,6 +533,7 @@
     '/': ['..X', '..X', '.X.', 'X..', 'X..'],
     H: ['X..X', 'X..X', 'XXXX', 'X..X', 'X..X'],
     M: ['X...X', 'XX.XX', 'X.X.X', 'X...X', 'X...X'],
+    V: ['X.X', 'X.X', 'X.X', 'X.X', '.X.'],
     '2': ['XXX.', '...X', '.XX.', 'X...', 'XXXX'],
     P: ['XXX.', 'X..X', 'XXX.', 'X...', 'X...'],
     Y: ['X.X', 'X.X', '.X.', '.X.', '.X.'],
@@ -616,6 +617,8 @@
   const creditU = () => iconU * .75;
   const creditRect = () => { const u = creditU(); return { x: W - ICON_PAD - 7 * u, y: H - ICON_PAD - 7 * u, w: 7 * u, h: 7 * u }; };
   let modeLabel = { x: 0, y: 0, w: 0, h: 0 };   // where the "// MODE" caption was last drawn
+  let modeFlashT = -1e9;   // clock time of the last mode switch, for the caption's confirmation flash
+  const MODE_FLASH = 1600;
   let hoverCredit = null;   // 'claude' | 'at' | 'mode' | null, from the mouse
   const claudeRect = () => { const u = creditU(); return { x: W - ICON_PAD - 17 * u, y: H - ICON_PAD - 7 * u, w: 7 * u, h: 7 * u }; };
   function drawIcons() {
@@ -636,11 +639,16 @@
     for (const ch of LABEL) { bitmap(FONT[ch], lx, ly, lu, CREDIT_COL); lx += (FONT[ch][0].length + TRACK) * lu; }
     ctx.globalAlpha = .45;
     // the same caption style under the mode toggle; hovering it says what a click switches to
-    const MLABEL = hoverCredit === 'mode' ? (mode === 'cpu' ? '// SWITCH TO 2 PLAYER' : '// SWITCH TO BOT') : '// MODE';
+    // right after a switch the caption confirms the new mode for a moment, brighter, then fades back
+    const since = clock - modeFlashT, flashing = since < MODE_FLASH;
+    const MLABEL = flashing ? (mode === 'cpu' ? '// VS BOT' : '// 2 PLAYER')
+      : hoverCredit === 'mode' ? (mode === 'cpu' ? '// SWITCH TO 2 PLAYER' : '// SWITCH TO BOT') : '// MODE';
+    if (flashing) ctx.globalAlpha = .45 + .55 * Math.min(1, (MODE_FLASH - since) / 500);
     let mx = Math.round(mr.x + mr.w - textWidth(MLABEL) * lu);
     const my = Math.round(mr.y + mr.h + 2 * iconU);
     modeLabel = { x: mx, y: my, w: mr.x + mr.w - mx, h: FONT_H * lu };
-    for (const ch of MLABEL) { bitmap(FONT[ch], mx, my, lu, '#9aa0aa'); mx += (FONT[ch][0].length + TRACK) * lu; }
+    const mcol = flashing ? (mode === 'cpu' ? ACC.blue : '#c8ccd4') : '#9aa0aa';
+    for (const ch of MLABEL) { bitmap(FONT[ch], mx, my, lu, mcol); mx += (FONT[ch][0].length + TRACK) * lu; }
     ctx.globalAlpha = 1;
     bitmap(muted ? SPK_OFF : SPK_ON, sr.x, sr.y, iconU, '#5f7fae');
     bitmap(PERSON, mr.x, mr.y, iconU, ACC.red);
@@ -761,7 +769,7 @@
     if (inside(x, y, soundRect(), 10)) { muted = !muted; return; }
     if (inside(x, y, creditRect(), 10)) { window.open(CREDIT_URL, '_blank', 'noopener'); return; }
     if (inside(x, y, claudeRect(), 10)) { window.open(CLAUDE_URL, '_blank', 'noopener'); return; }
-    if (inside(x, y, modeRect(), 10) || inside(x, y, modeLabel, 6)) { mode = mode === 'cpu' ? 'pvp' : 'cpu'; start(); return; }
+    if (inside(x, y, modeRect(), 10) || inside(x, y, modeLabel, 6)) { mode = mode === 'cpu' ? 'pvp' : 'cpu'; start(); modeFlashT = clock; return; }
     if (S.winner && (inside(x, y, winRect(), 10) || inside(x, y, restartRect(), 10))) { start(); return; }
     if (inside(x, y, { x: die.x, y: die.y, w: die.u * 9, h: die.u * 9 }, 16)) {
       if (S.winner) start(); else if (canRoll()) roll();
