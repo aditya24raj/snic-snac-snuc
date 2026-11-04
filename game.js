@@ -612,24 +612,29 @@
   // top corners: sound toggle and mode toggle
   const soundRect = () => ({ x: ICON_PAD, y: ICON_PAD, w: 9 * iconU, h: 7 * iconU });
   const modeRect = () => ({ x: W - ICON_PAD - 11 * iconU, y: ICON_PAD, w: 11 * iconU, h: 7 * iconU });
-  const creditRect = () => ({ x: W - ICON_PAD - 7 * iconU, y: H - ICON_PAD - 7 * iconU, w: 7 * iconU, h: 7 * iconU });
+  // the credit icons are drawn a little smaller than the controls up top
+  const creditU = () => iconU * .75;
+  const creditRect = () => { const u = creditU(); return { x: W - ICON_PAD - 7 * u, y: H - ICON_PAD - 7 * u, w: 7 * u, h: 7 * u }; };
   let modeLabel = { x: 0, y: 0, w: 0, h: 0 };   // where the "// MODE" caption was last drawn
   let hoverCredit = null;   // 'claude' | 'at' | 'mode' | null, from the mouse
-  const claudeRect = () => ({ x: W - ICON_PAD - 17 * iconU, y: H - ICON_PAD - 7 * iconU, w: 7 * iconU, h: 7 * iconU });
+  const claudeRect = () => { const u = creditU(); return { x: W - ICON_PAD - 17 * u, y: H - ICON_PAD - 7 * u, w: 7 * u, h: 7 * u }; };
   function drawIcons() {
     const sr = soundRect(), mr = modeRect(), cr = creditRect(), clr = claudeRect();
-    bitmap(AT, cr.x, cr.y, iconU, '#5f7fae');
-    bitmap(CLAUDE, clr.x, clr.y, iconU, '#d97757');
+    // the credit corner (icons + caption) sits in a dark grey just above the black background, so it stays out
+    // of the way next to the die; hovering a credit lifts it to the brighter caption grey
+    const CREDIT_COL = hoverCredit === 'claude' || hoverCredit === 'at' ? '#4a4e58' : '#2a2c34';
+    bitmap(AT, cr.x, cr.y, creditU(), CREDIT_COL);
+    bitmap(CLAUDE, clr.x, clr.y, creditU(), CREDIT_COL);
     // a small, faint grey "CREDITS" caption over the two credit icons, sized so it is never wider than they are;
     // hovering an icon swaps the caption for what that credit is, at the same size, still right-aligned
     const LABEL = hoverCredit === 'claude' ? '// BUILT WITH CLAUDE' : hoverCredit === 'at' ? '// INSPIRED BY @TISCHDUELL' : '// CREDITS';
     // whole-pixel scale and a single stamp (no heavy weight), so the thin letters stay crisp
-    const iw = cr.x + cr.w - clr.x, tw = textWidth(LABEL);
-    const lu = Math.max(1, Math.floor(Math.min(iconU / 2, iw / textWidth('// CREDITS'))));
+    const tw = textWidth(LABEL);
+    const lu = Math.max(1, Math.floor(Math.min(iconU / 2, 17 * iconU / textWidth('// CREDITS'))));
     let lx = Math.round(cr.x + cr.w - tw * lu);
-    const ly = Math.round(clr.y - 2 * iconU - FONT_H * lu);
+    const ly = Math.round(clr.y - 2 * creditU() - FONT_H * lu);
+    for (const ch of LABEL) { bitmap(FONT[ch], lx, ly, lu, CREDIT_COL); lx += (FONT[ch][0].length + TRACK) * lu; }
     ctx.globalAlpha = .45;
-    for (const ch of LABEL) { bitmap(FONT[ch], lx, ly, lu, '#9aa0aa'); lx += (FONT[ch][0].length + TRACK) * lu; }
     // the same caption style under the mode toggle; hovering it says what a click switches to
     const MLABEL = hoverCredit === 'mode' ? (mode === 'cpu' ? '// SWITCH TO 2 PLAYER' : '// SWITCH TO BOT') : '// MODE';
     let mx = Math.round(mr.x + mr.w - textWidth(MLABEL) * lu);
