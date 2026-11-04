@@ -532,6 +532,8 @@
     I: ['X', 'X', 'X', 'X', 'X'],
     '/': ['..X', '..X', '.X.', 'X..', 'X..'],
     H: ['X..X', 'X..X', 'XXXX', 'X..X', 'X..X'],
+    M: ['X...X', 'XX.XX', 'X.X.X', 'X...X', 'X...X'],
+    '2': ['XXX.', '...X', '.XX.', 'X...', 'XXXX'],
     P: ['XXX.', 'X..X', 'XXX.', 'X...', 'X...'],
     Y: ['X.X', 'X.X', '.X.', '.X.', '.X.'],
     '@': ['.XXX.', 'X.X.X', 'X.XXX', 'X....', '.XXX.'],
@@ -611,7 +613,8 @@
   const soundRect = () => ({ x: ICON_PAD, y: ICON_PAD, w: 9 * iconU, h: 7 * iconU });
   const modeRect = () => ({ x: W - ICON_PAD - 11 * iconU, y: ICON_PAD, w: 11 * iconU, h: 7 * iconU });
   const creditRect = () => ({ x: W - ICON_PAD - 7 * iconU, y: H - ICON_PAD - 7 * iconU, w: 7 * iconU, h: 7 * iconU });
-  let hoverCredit = null;   // 'claude' | 'at' | null, from the mouse
+  let modeLabel = { x: 0, y: 0, w: 0, h: 0 };   // where the "// MODE" caption was last drawn
+  let hoverCredit = null;   // 'claude' | 'at' | 'mode' | null, from the mouse
   const claudeRect = () => ({ x: W - ICON_PAD - 17 * iconU, y: H - ICON_PAD - 7 * iconU, w: 7 * iconU, h: 7 * iconU });
   function drawIcons() {
     const sr = soundRect(), mr = modeRect(), cr = creditRect(), clr = claudeRect();
@@ -627,6 +630,12 @@
     const ly = Math.round(clr.y - 2 * iconU - FONT_H * lu);
     ctx.globalAlpha = .45;
     for (const ch of LABEL) { bitmap(FONT[ch], lx, ly, lu, '#9aa0aa'); lx += (FONT[ch][0].length + TRACK) * lu; }
+    // the same caption style under the mode toggle; hovering it says what a click switches to
+    const MLABEL = hoverCredit === 'mode' ? (mode === 'cpu' ? '// SWITCH TO 2 PLAYER' : '// SWITCH TO BOT') : '// MODE';
+    let mx = Math.round(mr.x + mr.w - textWidth(MLABEL) * lu);
+    const my = Math.round(mr.y + mr.h + 2 * iconU);
+    modeLabel = { x: mx, y: my, w: mr.x + mr.w - mx, h: FONT_H * lu };
+    for (const ch of MLABEL) { bitmap(FONT[ch], mx, my, lu, '#9aa0aa'); mx += (FONT[ch][0].length + TRACK) * lu; }
     ctx.globalAlpha = 1;
     bitmap(muted ? SPK_OFF : SPK_ON, sr.x, sr.y, iconU, '#5f7fae');
     bitmap(PERSON, mr.x, mr.y, iconU, ACC.red);
@@ -736,7 +745,7 @@
   cv.addEventListener('pointermove', e => {
     if (e.pointerType !== 'mouse') return;
     const x = e.clientX, y = e.clientY;
-    hoverCredit = inside(x, y, claudeRect(), 4) ? 'claude' : inside(x, y, creditRect(), 4) ? 'at' : null;
+    hoverCredit = inside(x, y, claudeRect(), 4) ? 'claude' : inside(x, y, creditRect(), 4) ? 'at' : inside(x, y, modeRect(), 4) || inside(x, y, modeLabel, 4) ? 'mode' : null;
     cv.style.cursor = hoverCredit ? 'pointer' : '';
   });
   cv.addEventListener('pointerleave', () => { hoverCredit = null; cv.style.cursor = ''; });
@@ -747,7 +756,7 @@
     if (inside(x, y, soundRect(), 10)) { muted = !muted; return; }
     if (inside(x, y, creditRect(), 10)) { window.open(CREDIT_URL, '_blank', 'noopener'); return; }
     if (inside(x, y, claudeRect(), 10)) { window.open(CLAUDE_URL, '_blank', 'noopener'); return; }
-    if (inside(x, y, modeRect(), 10)) { mode = mode === 'cpu' ? 'pvp' : 'cpu'; start(); return; }
+    if (inside(x, y, modeRect(), 10) || inside(x, y, modeLabel, 6)) { mode = mode === 'cpu' ? 'pvp' : 'cpu'; start(); return; }
     if (S.winner && (inside(x, y, winRect(), 10) || inside(x, y, restartRect(), 10))) { start(); return; }
     if (inside(x, y, { x: die.x, y: die.y, w: die.u * 9, h: die.u * 9 }, 16)) {
       if (S.winner) start(); else if (canRoll()) roll();
