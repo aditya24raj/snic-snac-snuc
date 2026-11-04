@@ -271,12 +271,15 @@
       trail: { red: [0, 0, 0], blue: [0, 0, 0] },
       alive: { red: [true, true, true], blue: [true, true, true] },
       kills: { red: 0, blue: 0 },
-      shot: null, winner: null, cpuTimer: null,
+      shot: null, winner: null, cpuTimer: null, rolls: 0, t0: Date.now(), mode,
       cleared: [null, null, null], // per lane: when its lasers started fading after a kill
       landT: { red: [[], [], []], blue: [[], [], []] }   // when each laser block landed, for its cooling glow
     };
     slugs = []; sparks = []; debris = []; rings = []; shake = 0; flash = 0;
   }
+
+  // analytics (Umami, loaded in index.html); never lets a missing or blocked tracker break the game
+  function track(name, data) { try { if (window.umami) window.umami.track(name, data); } catch (e) {} }
 
   const isCpu = p => mode === 'cpu' && p === 'blue';
   const validLanes = p => [0, 1, 2].filter(l => S.alive[p][l] && S.alive[other(p)][l]);
@@ -286,7 +289,7 @@
   /* ================= TURN FLOW ================= */
   function roll() {
     if (S.winner || S.roll || S.rollT || S.shot) return;
-    S.rollT = 520; S.faceT = 0;
+    S.rollT = 520; S.faceT = 0; S.rolls++;
   }
 
   function fire(l) {
@@ -364,6 +367,9 @@
     if (S.kills[p] >= WINS) {
       S.winner = p; S.roll = null;
       setTimeout(sfxOver, 500);
+      // in bot mode the human is red, so a red win is a player win
+      track('game-over', { mode, winner: p, ...(mode === 'cpu' ? { result: p === 'red' ? 'player-won' : 'bot-won' } : {}),
+        rolls: S.rolls, seconds: Math.round((Date.now() - S.t0) / 1000) });
       return;
     }
     S.cpuTimer = setTimeout(() => {
@@ -389,6 +395,8 @@
 
   function start() {
     if (S && S.cpuTimer) clearTimeout(S.cpuTimer);
+    // restarting (or switching mode) part way through a game counts as leaving it
+    if (S && !S.winner && S.rolls > 0) track('game-quit', { mode: S.mode, rolls: S.rolls, seconds: Math.round((Date.now() - S.t0) / 1000) });
     newGame();
     layout(true);
   }
@@ -767,9 +775,9 @@
     initAudio();
     const x = e.clientX, y = e.clientY;
     if (inside(x, y, soundRect(), 10)) { muted = !muted; return; }
-    if (inside(x, y, creditRect(), 10)) { window.open(CREDIT_URL, '_blank', 'noopener'); return; }
-    if (inside(x, y, claudeRect(), 10)) { window.open(CLAUDE_URL, '_blank', 'noopener'); return; }
-    if (inside(x, y, modeRect(), 10) || inside(x, y, modeLabel, 6)) { mode = mode === 'cpu' ? 'pvp' : 'cpu'; start(); modeFlashT = clock; return; }
+    if (inside(x, y, creditRect(), 10)) { track('credit-click', { to: 'instagram' }); window.open(CREDIT_URL, '_blank', 'noopener'); return; }
+    if (inside(x, y, claudeRect(), 10)) { track('credit-click', { to: 'claude' }); window.open(CLAUDE_URL, '_blank', 'noopener'); return; }
+    if (inside(x, y, modeRect(), 10) || inside(x, y, modeLabel, 6)) { mode = mode === 'cpu' ? 'pvp' : 'cpu'; start(); modeFlashT = clock; track('mode-switch', { to: mode }); return; }
     if (S.winner && (inside(x, y, winRect(), 10) || inside(x, y, restartRect(), 10))) { start(); return; }
     if (inside(x, y, { x: die.x, y: die.y, w: die.u * 9, h: die.u * 9 }, 16)) {
       if (S.winner) start(); else if (canRoll()) roll();
